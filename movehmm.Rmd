@@ -1,0 +1,105 @@
+---
+title: "Hidden Markov Models for movement data in Stan"
+author: "Lionel Hertzog"
+date: "December 18, 2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(root.dir="~/Documents/PostDoc-Gent/movehmm-stan/")
+library(adehabitatLT)
+library(moveHMM)
+library(rstan)
+library(ggmap)
+library(bayesplot)
+```
+
+## About movement data
+
+Some stuff about telemetry, step length, turning angles and fitting models to it, behavioral states
+
+
+
+## Hidden Markov Models
+
+Some stuff about HMM, the basic parametrization
+
+## Simulated example
+
+Fit an HMM to simulated data
+
+```{r}
+#simulate some data
+n_obs <- 200
+ss <- simData(stepDist = "exp",angleDist = "wrpcauchy",stepPar = c(2,0.1),anglePar = c(0,1,0.15,0.75),obsPerAnimal = n_obs)
+
+plot(ss,ask=FALSE)
+```
+
+
+```{r}
+#fit a model
+data <- list(N=(n_obs-2),turn=ss$angle[!is.na(ss$angle)],
+             dist=ss$step[!is.na(ss$angle)],K=2,nCovs=1,
+             X=matrix(rep(1,n_obs-2),ncol=1))
+m <- stan("hmm_covariates.stan",data=data,control=list(adapt_delta=0.99))
+m
+```
+
+```{r}
+#probability that each observation belong to a cerain state
+post <- extract(m)
+
+pred_state <- apply(post$state,2,function(x) sum(x == 1)/4000)
+pred_state <- data.frame(Time=2:199,Prob1=pred_state,Prob2=(1-pred_state))
+#create a vector of best state for later use
+which_state <- ifelse(pred_state$Prob1 > 0.5,"1","2")
+
+pred_statem <- melt(pred_state,id.vars=1)
+
+ggplot(pred_statem,aes(x=Time,y=value,color=variable))+
+  geom_jitter(alpha=0.5,width = 0,height=0.05)
+```
+
+```{r}
+#plot fitted turning angle distribution based on the two states
+test_val <- seq(-pi,pi,length=100)
+rnd <- sample(1:4000,100)
+
+dd1 <- mapply(function(rho,mu) wrappedCauchy(test_val,rho,mu),rho=post$rho[rnd,1],mu=post$mu[rnd,1])
+
+dd2 <- mapply(function(rho,mu) wrappedCauchy(test_val,rho,mu),rho=post$rho[rnd,2],mu=post$mu[rnd,2])
+
+dd1 <- apply(dd1,2,function(x) x / sum (x))
+dd2 <- apply(dd2,2,function(x) x / sum (x))
+
+dda <- rbind(melt(dd1),melt(dd2))
+dda$x <- rep(test_val,200)
+dda$state <- rep(c("1","2"),each=10000)
+dda$rept <- paste0(dda$state,dda$Var2) 
+
+ggplot(dda,aes(x=x,y=value,color=state,group=rept))+
+  geom_path()
+```
+
+```{r}
+#plot the most likely state onto the movement path
+ss$state <- factor(c("2",which_state,"2"))
+
+cols <- c("red","blue")
+plot(ss$x,ss$y,type="n")
+segments(x0=ss$x[-200],y0=ss$y[-200],x1=ss$x[-1],y1=ss$y[-1],col=cols[ss$state[-200]])
+```
+
+## Real example
+
+Fit an HMM to Gus porpoise data
+
+## Including covariates
+
+Simulated data with covariates
+
+## Exercice
+
+## Reference
+

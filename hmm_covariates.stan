@@ -1,7 +1,9 @@
 functions{
-  //Function that returns the log pdf of the wrapped-Cauchy
+  //Function that returns the log pdf of the wrapped-Cauchy distribution
   real wrappedCauchy(real aPhi, real aRho, real aMu) {
-    return(- log(2*pi()) + log((1-aRho^2)/(1+aRho^2-2*aRho*cos(aPhi-aMu))));
+    real val;
+    val = (1.0 / (2.0 * pi())) * (sinh(aRho) / (cosh(aRho) - cos(aPhi - aMu)));
+    return(log(val));
   }
   
   //Function that returns a random sample from wrapped-Cauchy by first
@@ -39,14 +41,14 @@ data {
 }
 
 parameters {
-  vector<lower=-pi(), upper=pi()>[K] mu;
-  vector<lower=0,upper=1>[K] rho;
-  positive_ordered[K] alpha;
-  matrix[K*(K-1),nCovs] beta;
+  vector<lower=-pi(),upper=pi()>[K] mu; //average parameter of turning angle value
+  vector<lower=0>[K] rho; //dispersion parameter of the turning angles
+  positive_ordered[K] alpha; //decay parameter for the step length distribution
+  matrix[K*(K-1),nCovs] beta; //regression parameter for state transition
 }
 
 transformed parameters {
-  ## Gamma here is a matrix of the log probabilities not probabilities as in the moveHMM doc
+  //Gamma here is a matrix of the log probabilities not probabilities as in the moveHMM doc
   matrix[K,K] Gamma[N];
   matrix[K,K] Gamma_tr[N];
   
@@ -56,10 +58,10 @@ transformed parameters {
     for(k_from in 1:K){
       for(k in 1:K){
         if(k_from==k){
-          Gamma[n,k_from,k] = 1;
+          Gamma[n,k_from,k] = 1; //put 1 in the diagonals
       }
 	else{
-          Gamma[n,k_from,k] = exp(beta[aCount] * to_vector(X[n]));
+          Gamma[n,k_from,k] = exp(beta[aCount] * to_vector(X[n])); //linear predictor on the state transition
           aCount = aCount + 1;
       }
     }
@@ -70,7 +72,7 @@ transformed parameters {
   for(n in 1:N)
     for(k_from in 1:K)
       for(k  in 1:K)
-        Gamma_tr[n, k, k_from] = Gamma[n,k_from,k];
+        Gamma_tr[n, k, k_from] = Gamma[n,k_from,k]; //transpose the gamma array
   
 }
 
@@ -80,6 +82,9 @@ model {
   
   lp = rep_vector(-log(K), K);
   
+  //priors on the movement parameters
+  rho ~ gamma(2,1);
+
   //Forwards algorithm
   for (n in 1:N) {
     for (k in 1:K){
